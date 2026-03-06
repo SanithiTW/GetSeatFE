@@ -11,6 +11,12 @@ import seatIcon from '../assets/seat.jpg';
 import ticketIcon from '../assets/ticket.jpg';
 import cityIcon from '../assets/city.png';
 
+// Import Firestore functions
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { auth, databaseb } from "../firebase"; 
+import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
+
+
 const features = [
     { title: "Search Buses Easily", icon: cityIcon, desc: "Find buses instantly by selecting your origin, destination, and travel date." },
     { title: "Interactive Seat Selection", icon: seatIcon, desc: "Choose your preferred seat using our real-time seat layout." },
@@ -36,29 +42,61 @@ const LandingPage = () => {
 
     // Reset modal state when closed
     const closeLogin = () => {
-        setIsLoginOpen(false);
-        setStep(1);
-        setPhone('');
-        setOtp(['', '', '', '', '', '']);
-        setError('');
-    };
+
+  setIsLoginOpen(false);
+
+  if (window.recaptchaVerifier) {
+    window.recaptchaVerifier.clear();
+    window.recaptchaVerifier = null;
+  }
+
+  setStep(1);
+  setPhone('');
+  setOtp(['', '', '', '', '', '']);
+  setError('');
+
+};
 
     // Step 1: Handle Send OTP
-    const handleSendOTP = (e) => {
-        e.preventDefault();
-        setError('');
-        if (!phone) return setError('Phone number is required');
-        
-        const phoneRegex = /^[0-9]{9}$/; // Simple 9-digit check for SL (77XXXXXXX)
-        if (!phoneRegex.test(phone)) return setError('Enter a valid 9-digit mobile number');
+    const handleSendOTP = async (e) => {
 
-        setIsLoading(true);
-        // Simulate Firebase/API Call
-        setTimeout(() => {
-            setIsLoading(false);
-            setStep(2);
-        }, 1500);
-    };
+  e.preventDefault();
+  setError("");
+
+  if (!phone) return setError("Phone number is required");
+
+  const phoneRegex = /^[0-9]{9}$/;
+  if (!phoneRegex.test(phone))
+    return setError("Enter a valid 9 digit mobile number");
+
+  const fullPhone = "+94" + phone;
+
+  try {
+
+    setIsLoading(true);
+
+    const appVerifier = window.recaptchaVerifier;
+
+    const confirmationResult = await signInWithPhoneNumber(
+      auth,
+      fullPhone,
+      appVerifier
+    );
+
+    window.confirmationResult = confirmationResult;
+
+    setIsLoading(false);
+    setStep(2);
+
+  } catch (error) {
+
+    console.error(error);
+    setIsLoading(false);
+    setError("Failed to send OTP");
+
+  }
+
+};
 
     // Step 2: Handle OTP Input (Auto-focus logic)
     const handleOtpChange = (value, index) => {
@@ -79,6 +117,45 @@ const LandingPage = () => {
         }
     };
 
+    const handleVerifyOTP = async () => {
+  const otpCode = otp.join("");
+
+  try {
+    setIsLoading(true);
+
+    // Verify OTP
+    const result = await window.confirmationResult.confirm(otpCode);
+    const user = result.user; // logged-in user
+    console.log("Logged in user:", user);
+
+    const userRef = doc(databaseb, "passengers", user.uid);
+    const docSnap = await getDoc(userRef);
+
+    if (!docSnap.exists()) {
+      // New user → first write phone to Firestore
+      await setDoc(userRef, {
+        phone: user.phoneNumber,
+        createdAt: Date.now(),
+      });
+
+      // Navigate to Profile Setup **before closing login modal**
+      navigate("/ProfileSetup", { state: { uid: user.uid, phone: user.phoneNumber } });
+    } else {
+      // Existing user → dashboard
+      navigate("/PassengerDashboard");
+    }
+
+    // Close login modal after navigation
+    closeLogin();
+    setIsLoading(false);
+
+  } catch (error) {
+    console.error(error);
+    setError("Invalid OTP");
+    setIsLoading(false);
+  }
+};
+
     // Auto-submit when last digit is entered
     useEffect(() => {
         if (otp.every(digit => digit !== '') && step === 2) {
@@ -86,16 +163,30 @@ const LandingPage = () => {
         }
     }, [otp]);
 
-    const handleVerifyOTP = () => {
-        setIsLoading(true);
-        // Simulate Verification
-        setTimeout(() => {
-            setIsLoading(false);
-            alert("Login Successful!");
-            closeLogin();
-            navigate('/dashboard');
-        }, 1500);
-    };
+   useEffect(() => {
+
+  if (!isLoginOpen) return;
+
+  setTimeout(() => {
+
+    if (!window.recaptchaVerifier) {
+
+      window.recaptchaVerifier = new RecaptchaVerifier(
+        auth,
+        "recaptcha-container",
+        {
+          size: "invisible",
+          callback: () => {
+            console.log("Recaptcha solved");
+          }
+        }
+      );
+
+    }
+
+  }, 300);
+
+}, [isLoginOpen]);
 
     const AnimatedCounter = ({ endValue, label }) => {
         const ref = useRef(null);
@@ -130,6 +221,7 @@ const LandingPage = () => {
                                     <h2>Login with Phone Number</h2>
                                     <p>Enter your details to receive an OTP</p>
                                     <form onSubmit={handleSendOTP} className="otp-form">
+                                        
                                         <div className="phone-field">
                                             <div className="country-code">🇱🇰 +94</div>
                                             <input 
@@ -144,6 +236,7 @@ const LandingPage = () => {
                                         <button type="submit" className="otp-btn" disabled={isLoading}>
                                             {isLoading ? <div className="spinner"></div> : "Send OTP"}
                                         </button>
+                                        <div id="recaptcha-container"></div>
                                     </form>
                                 </>
                             ) : (
@@ -177,7 +270,7 @@ const LandingPage = () => {
 
             <header className="header">
                 <div className="logo-container">
-                    <img src={Logo} alt="GetSeat Logo" className="logo" />
+                    <h2 className="text-logo">Get<span>Seat</span></h2>
                 </div>
                 <nav className="nav-links">
                     <a href="#features">Features</a>
@@ -195,7 +288,7 @@ const LandingPage = () => {
                 <div className="mesh-gradient"></div>
                 <div className="hero-content">
                     <motion.span initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="hero-badge">
-                        🚌 Smart Bus Booking Platform
+                         Smart Bus Booking Platform
                     </motion.span>
                     <motion.h1 initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
                         Your Gateway to <span className="text-gradient">Seamless</span> Travel
@@ -257,9 +350,10 @@ const LandingPage = () => {
 
             <footer className="footer-modern">
                 <div className="footer-top">
-                    <img src={Logo} alt="Logo" className="footer-logo" />
+                    <h2 className="text-logo">Get<span>Seat</span></h2>
                     <div className="footer-links">
                         <a href="#">Privacy</a> <a href="#">Terms</a> <a href="#">Help Center</a>
+                        <a href="/AdminLoging" style={{ fontSize: "10px", color: "#aaa" }}>Admin Login</a>
                     </div>
                 </div>
                 <div className="footer-bottom">

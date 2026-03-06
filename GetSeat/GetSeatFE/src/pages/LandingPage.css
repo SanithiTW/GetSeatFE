@@ -457,3 +457,28 @@ body {
 .error-text {
     color: #ef4444; font-size: 0.85rem; margin-top: 0.5rem;
 }
+
+/* Styling for the text-based logo to match Dashboard */
+.text-logo {
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: -1px;
+    margin: 0;
+}
+
+.text-logo span {
+    color: #3b82f6; /* This is the blue color from your dashboard */
+}
+
+/* Ensure the logo container doesn't restrict the text */
+.logo-container {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+/* Optional: Add a small hover effect */
+.text-logo:hover {
+    opacity: 0.9;
+}
