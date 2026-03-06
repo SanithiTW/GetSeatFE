@@ -42,7 +42,7 @@ const AdminLogin = () => {
 
   // ✅ Skip backend fetch for now
   setIsLoading(false);
-  navigate('/AdminDashboard');
+  navigate('/AdminDashboard', { state: { adminId: user.uid } });
 
 } catch (firebaseError) {
   console.error(firebaseError);

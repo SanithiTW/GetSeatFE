@@ -105,3 +105,177 @@
 .pill { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
 .pill.success { background: rgba(16, 185, 129, 0.1); color: #10b981; }
 .pill.warning { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+
+/* VIEW HEADERS */
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2rem;
+}
+
+.section-header h3 { font-size: 1.5rem; margin: 0; }
+.section-header p { color: #94a3b8; font-size: 0.9rem; margin: 5px 0 0; }
+
+/* MODAL & FORMS */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    width: 100%;
+    max-width: 550px;
+    padding: 2rem;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.close-icon { font-size: 1.5rem; cursor: pointer; color: #94a3b8; }
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+.input-field { display: flex; flex-direction: column; gap: 8px; }
+.input-field label { font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; }
+
+.input-field input {
+    background: #0f172a;
+    border: 1px solid #334155;
+    padding: 12px;
+    border-radius: 8px;
+    color: white;
+}
+
+.form-actions {
+    margin-top: 2rem;
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+}
+
+/* BOOKING TABLE SPECIFICS */
+.passenger-cell { display: flex; align-items: center; gap: 12px; }
+.avatar-sm {
+    width: 32px; height: 32px;
+    background: #3b82f6;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.route-text { display: block; font-weight: 500; }
+.bus-subtext { color: #64748b; font-size: 0.75rem; }
+
+.seat-badge {
+    background: #334155;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: monospace;
+}
+
+.action-cell { display: flex; gap: 8px; }
+.icon-btn {
+    background: none;
+    border: none;
+    font-size: 1.4rem;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.icon-btn.success { color: #10b981; }
+.icon-btn.danger { color: #ef4444; }
+.icon-btn:hover { transform: scale(1.2); }
+
+/* STATUS PILLS */
+.pill.reserved { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+.pill.cancelled { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+
+.primary-btn {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cancel-btn {
+    background: transparent;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    padding: 12px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.bus-seats {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.seat-row.horizontal {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px; /* space between left, aisle, right */
+}
+
+.seat-side {
+    display: flex;
+    gap: 6px; /* space between seats */
+}
+
+.seat-side.left {
+    flex-direction: row; /* seats go left -> right */
+}
+
+.seat-side.right {
+    flex-direction: row; /* seats go left -> right */
+}
+
+.aisle {
+    width: 40px; /* aisle width */
+    height: 100%;
+}
+
+.seat {
+    width: 30px;
+    height: 30px;
+    background-color: #ccc;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+
+.seat.active {
+    background-color: #4caf50; /* available */
+}
+
+.seat.inactive {
+    background-color: #f44336; /* unavailable */
+}
