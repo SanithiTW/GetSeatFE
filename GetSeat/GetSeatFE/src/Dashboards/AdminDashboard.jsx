@@ -175,11 +175,11 @@ const RoutesSchedulesView = ({ adminId, buses }) => {
         try {
 
             await addDoc(collection(databaseb, "schedules"), {
-
     routeNo: formData.routeNo,
     departure: formData.departure,
     arrival: formData.arrival,
     busModel: formData.busModel,
+    busNumber: formData.busNumber, // <-- ADD THIS
     departureDate: formData.departureDate,
     departureTime: formData.departureTime,
     arrivalDate: formData.arrivalDate,
@@ -188,12 +188,9 @@ const RoutesSchedulesView = ({ adminId, buses }) => {
     closingTime: formData.closingTime,
     depot: formData.depot,
     price: formData.price,
-
     stops: formData.stops.split(',').map(s => s.trim()),
-
     createdBy: adminId,
     createdAt: Date.now()
-
 });
 
             alert("Schedule Added Successfully");
@@ -272,7 +269,7 @@ const RoutesSchedulesView = ({ adminId, buses }) => {
                             <th>Route No</th>
                             <th>Departure</th>
                             <th>Arrival</th>
-                            <th>Bus Model</th>
+                            <th>Bus Number</th>
                             <th>Departure Date</th>
                             <th>Departure Time</th>
                             <th>Price</th>
@@ -289,7 +286,7 @@ const RoutesSchedulesView = ({ adminId, buses }) => {
                                 <td>{s.routeNo}</td>
                                 <td>{s.departure}</td>
                                 <td>{s.arrival}</td>
-                                <td>{s.busModel}</td>
+                                <td>{s.busNumber} ({s.busModel})</td>
                                 <td>{s.departureDate}</td>
                                 <td>{s.departureTime}</td>
                                 <td>{s.price}</td>
@@ -361,18 +358,22 @@ const RoutesSchedulesView = ({ adminId, buses }) => {
         </div>
 
         <div className="input-field">
-            <label>Select Bus</label>
-<select
+           <select
     required
-    value={formData.busModel}
-    onChange={(e) =>
-        setFormData({ ...formData, busModel: e.target.value })
-    }
+    value={formData.selectedBusId || ''}  // NEW: track selected bus ID
+    onChange={(e) => {
+        const selectedBus = buses.find(bus => bus.id === e.target.value);
+        setFormData({ 
+            ...formData, 
+            selectedBusId: selectedBus?.id || '',
+            busNumber: selectedBus?.busNumber || '',
+            busModel: selectedBus?.model || ''
+        });
+    }}
 >
     <option value="">Select Bus</option>
-
     {buses.map((bus) => (
-        <option key={bus.id} value={bus.model}>
+        <option key={bus.id} value={bus.id}>
             {bus.busName} - {bus.busNumber} ({bus.model})
         </option>
     ))}

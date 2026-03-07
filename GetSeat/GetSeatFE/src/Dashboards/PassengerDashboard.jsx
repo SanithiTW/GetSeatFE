@@ -5,31 +5,45 @@ import {
     MdSearch, MdBook, MdPerson, MdLogout, 
     MdEventSeat, MdCheckCircle 
 } from 'react-icons/md';
+import { GiSteeringWheel } from "react-icons/gi"; // Add this import
 import { auth, databaseb } from '../firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { 
+    doc, getDoc, collection, getDocs, setDoc 
+} from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import './PassengerDashboard.css';
 
-   const PassengerDashboard = () => {
-    const [activeTab, setActiveTab] = useState('search'); // search, bookings, profile
-    const [bookingStep, setBookingStep] = useState(1); // 1: Search, 2: Seats, 3: Details, 4: Confirm
+const PassengerDashboard = () => {
+    const [activeTab, setActiveTab] = useState('search'); 
+    const [bookingStep, setBookingStep] = useState(1); 
     const [profile, setProfile] = useState({ fullName: '', email: '', phone: '' });
     const [isSavingProfile, setIsSavingProfile] = useState(false);
-    const [isEditing, setIsEditing] = useState(false); // ✅ Move here
+    const [isEditing, setIsEditing] = useState(false);
+
+    const [fromOptions, setFromOptions] = useState([]);
+    const [toOptions, setToOptions] = useState([]);
+    const [from, setFrom] = useState('');
+    const [to, setTo] = useState('');
+    const [date, setDate] = useState('');
+    const [availableBuses, setAvailableBuses] = useState([]);
+    const [selectedBus, setSelectedBus] = useState(null);
+
+    const [selectedSeats, setSelectedSeats] = useState([]);
+
+    const [boarding, setBoarding] = useState('');
+const [dropping, setDropping] = useState('');
 
     const menuItems = [
-        { id: 'search', label: 'Book a Ticket', icon: <MdSearch /> },
+        { id: 'search', label: 'Book a Seat', icon: <MdSearch /> },
         { id: 'bookings', label: 'My Bookings', icon: <MdBook /> },
         { id: 'profile', label: 'My Profile', icon: <MdPerson /> },
     ];
 
-    // --- Fetch Profile whenever My Profile tab is active ---
     useEffect(() => {
         const fetchProfile = async () => {
             if (activeTab !== 'profile') return;
             const user = auth.currentUser;
             if (!user) return;
-
             try {
                 const docRef = doc(databaseb, 'passengers', user.uid);
                 const docSnap = await getDoc(docRef);
@@ -45,12 +59,69 @@ import './PassengerDashboard.css';
         fetchProfile();
     }, [activeTab]);
 
-    // --- Save Updated Profile ---
+    useEffect(() => {
+        const fetchLocations = async () => {
+            try {
+                const schedulesCol = collection(databaseb, 'schedules');
+                const schedulesSnap = await getDocs(schedulesCol);
+                const fromSet = new Set();
+                const toSet = new Set();
+
+                schedulesSnap.forEach(doc => {
+                    const sch = doc.data();
+                    if (sch.departure?.trim()) fromSet.add(sch.departure.trim());
+                    if (sch.arrival?.trim()) toSet.add(sch.arrival.trim());
+                });
+
+                setFromOptions(Array.from(fromSet));
+                setToOptions(Array.from(toSet));
+            } catch (err) {
+                console.error('Error fetching locations:', err);
+            }
+        };
+        fetchLocations();
+    }, []);
+
+    const handleSearchBuses = async () => {
+    if (!from || !to || !date) return alert('Please select From, To, and Date.');
+    try {
+        const schedulesCol = collection(databaseb, 'schedules');
+        const schedulesSnap = await getDocs(schedulesCol);
+        const busesCol = collection(databaseb, 'buses');
+        const busesSnap = await getDocs(busesCol);
+
+        const busesMap = {};
+        busesSnap.forEach(bDoc => {
+            const data = bDoc.data();
+            busesMap[data.busNumber] = { id: bDoc.id, ...data };
+        });
+
+        const results = [];
+
+        schedulesSnap.forEach(docSnap => {
+            const sch = docSnap.data();
+            if (
+                sch.departure?.trim() === from.trim() &&
+                sch.arrival?.trim() === to.trim() &&
+                sch.departureDate?.trim() === date
+            ) {
+                const busData = busesMap[sch.busNumber] || { seats: [] };
+                results.push({ scheduleId: docSnap.id, schedule: sch, bus: busData });
+            }
+        });
+
+        setAvailableBuses(results);
+        if (results.length === 0) alert('No buses found for the selected route and date.');
+    } catch (err) {
+        console.error('Error searching buses:', err);
+        alert('Error searching buses.');
+    }
+};
+
     const handleSaveProfile = async () => {
         if (!profile.fullName || !profile.email) return alert('Please fill all fields.');
         const user = auth.currentUser;
         if (!user) return;
-
         try {
             setIsSavingProfile(true);
             const docRef = doc(databaseb, 'passengers', user.uid);
@@ -59,7 +130,6 @@ import './PassengerDashboard.css';
                 phone: user.phoneNumber || profile.phone,
                 updatedAt: Date.now()
             }, { merge: true });
-
             setIsSavingProfile(false);
             alert('Profile updated successfully!');
         } catch (err) {
@@ -69,7 +139,6 @@ import './PassengerDashboard.css';
         }
     };
 
-    // --- Logout ---
     const handleLogout = async () => {
         try {
             await signOut(auth);
@@ -81,7 +150,6 @@ import './PassengerDashboard.css';
 
     return (
         <div className="dashboard-container">
-            {/* --- SIDEBAR --- */}
             <aside className="sidebar">
                 <div className="sidebar-logo">
                     <h2>Get<span>Seat</span></h2>
@@ -105,7 +173,6 @@ import './PassengerDashboard.css';
                 </nav>
             </aside>
 
-            {/* --- MAIN CONTENT --- */}
             <main className="main-content">
                 <header className="content-header">
                     <h1>{menuItems.find(i => i.id === activeTab)?.label}</h1>
@@ -121,19 +188,245 @@ import './PassengerDashboard.css';
                                 animate={{ opacity: 1, x: 0 }}
                                 exit={{ opacity: 0, x: -20 }}
                             >
-                                {bookingStep === 1 && <BusSearch onSearch={() => setBookingStep(2)} />}
-                                {bookingStep === 2 && <SeatLayout onProceed={() => setBookingStep(3)} />}
-                                {bookingStep === 3 && <PassengerDetails onConfirm={() => setBookingStep(4)} />}
+                                {bookingStep === 1 && (
+                                    <BusSearch 
+                                        from={from} setFrom={setFrom} 
+                                        to={to} setTo={setTo} 
+                                        date={date} setDate={setDate}
+                                        fromOptions={fromOptions} toOptions={toOptions}
+                                        handleSearchBuses={handleSearchBuses}
+                                        availableBuses={availableBuses}
+                                        setSelectedBus={bus => {
+                                            setSelectedBus(bus);
+                                            setBookingStep(2);
+                                        }}
+                                    />
+                                )}
+{bookingStep === 2 && selectedBus && (
+    <SeatLayout
+        bus={selectedBus.bus}       // Pass the inner bus object
+        selectedSeats={selectedSeats}
+        toggleSeat={(seatNo) => {
+            setSelectedSeats(prev => 
+                prev.includes(seatNo) 
+                ? prev.filter(s => s !== seatNo)
+                : [...prev, seatNo]
+            );
+        }}
+        onProceed={() => setBookingStep(3)} // Move to BoardingDropping step
+    />
+)}
+                                {bookingStep === 3 && selectedBus && (
+                                    <BoardingDropping
+                                        schedule={selectedBus.schedule}
+                                        onConfirm={() => setBookingStep(4)}
+                                    />
+                                )}
+
                                 {bookingStep === 4 && <BookingSuccess onDone={() => setActiveTab('bookings')} />}
                             </motion.div>
                         )}
 
                         {activeTab === 'bookings' && <MyBookingsView />}
 
-                        const [isEditing, setIsEditing] = useState(false);
+                        {activeTab === 'profile' && (
+                            <ProfileSection 
+                                profile={profile} 
+                                isEditing={isEditing} 
+                                setIsEditing={setIsEditing} 
+                                setProfile={setProfile} 
+                                handleSaveProfile={handleSaveProfile} 
+                                isSavingProfile={isSavingProfile}
+                            />
+                        )}
+                    </AnimatePresence>
+                </section>
+            </main>
+        </div>
+    );
+};
 
-// ... inside the return AnimatePresence ...
-{activeTab === 'profile' && (
+// ----------------- Sub-components -----------------
+
+const BusSearch = ({ from, setFrom, to, setTo, date, setDate, fromOptions, toOptions, handleSearchBuses, availableBuses, setSelectedBus }) => (
+    <div className="glass-card search-box">
+        <h3>Find Available Buses</h3>
+        <div className="search-inputs">
+            <div className="input-group">
+                <label>From</label>
+                <select value={from} onChange={e => setFrom(e.target.value)}>
+                    <option value="">Select</option>
+                    {fromOptions.map((loc, idx) => <option key={idx} value={loc}>{loc}</option>)}
+                </select>
+            </div>
+            <div className="input-group">
+                <label>To</label>
+                <select value={to} onChange={e => setTo(e.target.value)}>
+                    <option value="">Select</option>
+                    {toOptions.map((loc, idx) => <option key={idx} value={loc}>{loc}</option>)}
+                </select>
+            </div>
+            <div className="input-group">
+                <label>Date</label>
+                <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+            </div>
+            <button className="primary-btn" onClick={handleSearchBuses}>Search Buses</button>
+        </div>
+
+        {availableBuses.length > 0 && (
+            <div className="bus-results">
+                {availableBuses.map((item, idx) => (
+                    <div key={idx} className="bus-card">
+                        <div className="bus-card-info">
+                            <h4>{item.bus.busName}</h4>
+                            <span className="route-tag">Route {item.schedule.routeNo}</span>
+                            <p>{item.schedule.departure} ({item.schedule.departureTime}) → {item.schedule.arrival} ({item.schedule.arrivalTime})</p>
+                            <p className="price-tag">LKR {item.schedule.price}</p>
+                        </div>
+                        <button className="book-btn" onClick={() => setSelectedBus(item)}>
+                            View Seats
+                        </button>
+                    </div>
+                ))}
+            </div>
+        )}
+    </div>
+);
+
+const SeatLayout = ({ bus, selectedSeats, toggleSeat, onProceed }) => {
+    if (!bus || !bus.seats) {
+        return <div>Loading seats...</div>;
+    }
+
+    const seats = bus.seats;
+    const occupiedSeats = bus.occupiedSeats || [];
+
+    // Split seats into rows of 4 (2 left, 2 right)
+    const rows = [];
+    for (let i = 0; i < seats.length; i += 4) {
+        rows.push(seats.slice(i, i + 4));
+    }
+
+    return (
+        <div className="bus-container">
+            <div className="bus-front">DRIVER</div>
+
+            {rows.map((row, idx) => (
+                <div key={idx} className="seat-row">
+                    <div className="seat-pair">
+                        {row.slice(0,2).map(seatNo => {
+                            const isBooked = occupiedSeats.includes(seatNo);
+                            const isSelected = selectedSeats.includes(seatNo);
+                            return (
+                                <div
+                                    key={seatNo}
+                                    className={`seat ${isBooked ? 'booked' : ''} ${isSelected ? 'selected' : ''}`}
+                                    onClick={() => !isBooked && toggleSeat(seatNo)}
+                                >
+                                    {seatNo.toString().padStart(2, '0')}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    <div className="aisle"></div>
+
+                    <div className="seat-pair">
+                        {row.slice(2,4).map(seatNo => {
+                            const isBooked = occupiedSeats.includes(seatNo);
+                            const isSelected = selectedSeats.includes(seatNo);
+                            return (
+                                <div
+                                    key={seatNo}
+                                    className={`seat ${isBooked ? 'booked' : ''} ${isSelected ? 'selected' : ''}`}
+                                    onClick={() => !isBooked && toggleSeat(seatNo)}
+                                >
+                                    {seatNo.toString().padStart(2, '0')}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            ))}
+
+            {/* Proceed Button */}
+            {selectedSeats.length > 0 && (
+                <button
+                    className="primary-btn"
+                    style={{ marginTop: '20px', display: 'block', width: '100%' }}
+                    onClick={onProceed}
+                >
+                    Proceed to Boarding & Dropping
+                </button>
+            )}
+        </div>
+    );
+};
+
+const BoardingDropping = ({ schedule, onConfirm }) => {
+    const [boarding, setBoarding] = useState('');
+    const [dropping, setDropping] = useState('');
+
+    const handleConfirm = () => {
+        if (!boarding || !dropping) return alert('Please select boarding and dropping points.');
+        onConfirm();
+    };
+
+    return (
+        <div className="glass-card">
+            <h3>Select Boarding & Dropping Points</h3>
+            <div className="input-group">
+                <label>Boarding</label>
+                <select value={boarding} onChange={e => setBoarding(e.target.value)}>
+                    <option value="">Select</option>
+                    {schedule.stops?.map((stop, idx) => <option key={idx} value={stop}>{stop}</option>)}
+                </select>
+            </div>
+            <div className="input-group">
+                <label>Dropping</label>
+                <select value={dropping} onChange={e => setDropping(e.target.value)}>
+                    <option value="">Select</option>
+                    {schedule.stops?.map((stop, idx) => <option key={idx} value={stop}>{stop}</option>)}
+                </select>
+            </div>
+            <button className="primary-btn" onClick={handleConfirm}>Confirm Points</button>
+        </div>
+    );
+};
+
+const BookingSuccess = ({ onDone }) => (
+    <div className="glass-card success-card">
+        <MdCheckCircle className="success-icon" />
+        <h2>Booking Confirmed!</h2>
+        <p>Your tickets have been reserved successfully.</p>
+        <button className="primary-btn" onClick={onDone}>View My Bookings</button>
+    </div>
+);
+
+const MyBookingsView = () => (
+    <div className="glass-card">
+        <table className="bookings-table">
+            <thead>
+                <tr>
+                    <th>Booking ID</th>
+                    <th>Route</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>BK-9945</td>
+                    <td>Colombo → Galle</td>
+                    <td>2026-05-10</td>
+                    <td><span className="status-pill confirmed">Confirmed</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+);
+
+const ProfileSection = ({ profile, isEditing, setIsEditing, setProfile, handleSaveProfile, isSavingProfile }) => (
     <motion.div
         key="profile-view"
         initial={{ opacity: 0, y: 10 }}
@@ -149,13 +442,11 @@ import './PassengerDashboard.css';
                     <h3>{isEditing ? "Edit Your Information" : profile.fullName || "Passenger"}</h3>
                     <p>{isEditing ? "Update your contact details below" : "Passenger Account"}</p>
                 </div>
-  
-                    {!isEditing && (
-    <button className="edit-toggle-btn" onClick={() => setIsEditing(true)}>
-        Edit Profile
-    </button>
-)}
-
+                {!isEditing && (
+                    <button className="edit-toggle-btn" onClick={() => setIsEditing(true)}>
+                        Edit Profile
+                    </button>
+                )}
             </div>
 
             <div className="profile-details">
@@ -195,111 +486,21 @@ import './PassengerDashboard.css';
 
             {isEditing && (
                 <div className="profile-actions">
-        <button className="secondary-btn" onClick={() => setIsEditing(false)}>Cancel</button>
-        <button 
-            className="primary-btn save-btn" 
-            onClick={async () => {
-                await handleSaveProfile();
-                setIsEditing(false);
-            }} 
-            disabled={isSavingProfile}
-        >
-            {isSavingProfile ? 'Saving...' : 'Save Changes'}
-        </button>
-    </div>
+                    <button className="secondary-btn" onClick={() => setIsEditing(false)}>Cancel</button>
+                    <button 
+                        className="primary-btn save-btn" 
+                        onClick={async () => {
+                            await handleSaveProfile();
+                            setIsEditing(false);
+                        }} 
+                        disabled={isSavingProfile}
+                    >
+                        {isSavingProfile ? 'Saving...' : 'Save Changes'}
+                    </button>
+                </div>
             )}
         </div>
     </motion.div>
-)}
-                    </AnimatePresence>
-                </section>
-            </main>
-        </div>
-    );
-};
-
-// ----------------- Sub-components -----------------
-const BusSearch = ({ onSearch }) => (
-    <div className="glass-card search-box">
-        <h3>Find Available Buses</h3>
-        <div className="search-inputs">
-            <div className="input-group">
-                <label>From</label>
-                <select><option>Colombo</option><option>Kandy</option></select>
-            </div>
-            <div className="input-group">
-                <label>To</label>
-                <select><option>Kandy</option><option>Colombo</option></select>
-            </div>
-            <div className="input-group">
-                <label>Date</label>
-                <input type="date" />
-            </div>
-            <button className="primary-btn" onClick={onSearch}>Search Buses</button>
-        </div>
-    </div>
-);
-
-const SeatLayout = ({ onProceed }) => {
-    const seats = Array.from({ length: 20 }, (_, i) => i + 1);
-    const booked = [3, 4, 12, 13];
-    const [selected, setSelected] = useState([]);
-
-    return (
-        <div className="glass-card">
-            <h3>Select Your Seats</h3>
-            <div className="seat-grid">
-                {seats.map(s => (
-                    <button 
-                        key={s}
-                        disabled={booked.includes(s)}
-                        className={`seat ${booked.includes(s) ? 'booked' : ''} ${selected.includes(s) ? 'selected' : ''}`}
-                        onClick={() => setSelected(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
-                    >
-                        <MdEventSeat /> {s}
-                    </button>
-                ))}
-            </div>
-            <div className="legend">
-                <span><div className="box available"></div> Available</span>
-                <span><div className="box booked"></div> Booked</span>
-                <span><div className="box selected"></div> Selected</span>
-            </div>
-            <button className="primary-btn" disabled={selected.length === 0} onClick={onProceed}>Proceed to Checkout</button>
-        </div>
-    );
-};
-
-const BookingSuccess = ({ onDone }) => (
-    <div className="glass-card success-card">
-        <MdCheckCircle className="success-icon" />
-        <h2>Booking Confirmed!</h2>
-        <p>Your Booking ID: <strong>BK-10245</strong></p>
-        <button className="primary-btn" onClick={onDone}>View My Bookings</button>
-    </div>
-);
-
-const MyBookingsView = () => (
-    <div className="glass-card">
-        <table className="bookings-table">
-            <thead>
-                <tr>
-                    <th>Booking ID</th>
-                    <th>Route</th>
-                    <th>Date</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>BK-9945</td>
-                    <td>Colombo → Galle</td>
-                    <td>2026-05-10</td>
-                    <td><span className="status-pill confirmed">Confirmed</span></td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
 );
 
 export default PassengerDashboard;
