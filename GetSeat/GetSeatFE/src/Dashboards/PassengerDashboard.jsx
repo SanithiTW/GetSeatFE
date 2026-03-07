@@ -7,11 +7,11 @@ import {
 } from 'react-icons/md';
 import { GiSteeringWheel } from "react-icons/gi"; // Add this import
 import { auth, databaseb } from '../firebase';
-import { 
-    doc, getDoc, collection, getDocs, setDoc 
-} from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
+import { collection, getDocs, query, where, doc, getDoc, setDoc } from "firebase/firestore";
+import { signOut, onAuthStateChanged } from 'firebase/auth';
 import './PassengerDashboard.css';
+
+import axios from "axios";
 
 const PassengerDashboard = () => {
     const [activeTab, setActiveTab] = useState('search'); 
@@ -33,11 +33,38 @@ const PassengerDashboard = () => {
     const [boarding, setBoarding] = useState('');
 const [dropping, setDropping] = useState('');
 
+const [bookedSeats, setBookedSeats] = useState([]);
+
     const menuItems = [
         { id: 'search', label: 'Book a Seat', icon: <MdSearch /> },
         { id: 'bookings', label: 'My Bookings', icon: <MdBook /> },
         { id: 'profile', label: 'My Profile', icon: <MdPerson /> },
     ];
+
+    
+useEffect(() => {
+  const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    if (!user) return;
+    
+    try {
+      const bookingsRef = collection(databaseb, "bookings");
+      const q = query(bookingsRef, where("userId", "==", user.uid));
+      const querySnap = await getDocs(q);
+      const fetchedBookings = [];
+      querySnap.forEach(doc => {
+        fetchedBookings.push({ id: doc.id, ...doc.data() });
+      });
+      fetchedBookings.sort((a, b) => b.createdAt - a.createdAt);
+      setBookings(fetchedBookings);
+    } catch (err) {
+      console.error("Error fetching bookings:", err);
+    } finally {
+      setLoading(false);
+    }
+  });
+
+  return () => unsubscribe();
+}, []);
 
     useEffect(() => {
         const fetchProfile = async () => {
@@ -81,6 +108,29 @@ const [dropping, setDropping] = useState('');
         };
         fetchLocations();
     }, []);
+
+    // Fetch booked seats for the selected bus
+useEffect(() => {
+  const fetchBookings = async () => {
+    if (!selectedBus) return;
+
+    try {
+      const bookingsRef = collection(databaseb, "bookings");
+      const q = query(bookingsRef, where("scheduleId", "==", selectedBus.schedule.routeNo));
+      const snap = await getDocs(q);
+
+      const seats = [];
+      snap.forEach(doc => seats.push(...(doc.data().seats || [])));
+
+      setBookedSeats(seats);
+    } catch (err) {
+      console.error("Error fetching booked seats:", err);
+    }
+  };
+
+  fetchBookings();
+}, [selectedBus]);
+
 
     const handleSearchBuses = async () => {
     if (!from || !to || !date) return alert('Please select From, To, and Date.');
@@ -203,27 +253,45 @@ const [dropping, setDropping] = useState('');
                                     />
                                 )}
 {bookingStep === 2 && selectedBus && (
-    <SeatLayout
-        bus={selectedBus.bus}       // Pass the inner bus object
-        selectedSeats={selectedSeats}
-        toggleSeat={(seatNo) => {
-            setSelectedSeats(prev => 
-                prev.includes(seatNo) 
-                ? prev.filter(s => s !== seatNo)
-                : [...prev, seatNo]
-            );
-        }}
-        onProceed={() => setBookingStep(3)} // Move to BoardingDropping step
-    />
+  <SeatLayout
+    bus={selectedBus.bus}
+    selectedSeats={selectedSeats}
+    bookedSeats={bookedSeats} // <- now correct
+    toggleSeat={(seatNo) => {
+        setSelectedSeats(prev => 
+            prev.includes(seatNo) 
+            ? prev.filter(s => s !== seatNo)
+            : [...prev, seatNo]
+        );
+    }}
+    onProceed={() => setBookingStep(3)}
+  />
 )}
                                 {bookingStep === 3 && selectedBus && (
-                                    <BoardingDropping
-                                        schedule={selectedBus.schedule}
-                                        onConfirm={() => setBookingStep(4)}
-                                    />
-                                )}
+    <BoardingDropping
+        schedule={selectedBus.schedule}
+        onConfirm={(boardingPoint, droppingPoint) => {
+            setBoarding(boardingPoint);
+            setDropping(droppingPoint);
+            setBookingStep(4);
+        }}
+    />
+)}
 
-                                {bookingStep === 4 && <BookingSuccess onDone={() => setActiveTab('bookings')} />}
+{bookingStep === 4 && selectedBus && (
+    <PaymentSection
+        schedule={selectedBus.schedule}
+        selectedSeats={selectedSeats}
+        boarding={boarding}
+        dropping={dropping}
+        onSuccess={() => setBookingStep(5)}
+    />
+)}
+{bookingStep === 5 && (
+    <BookingSuccess onDone={() => setActiveTab("bookings")} />
+)}
+
+                                
                             </motion.div>
                         )}
 
@@ -293,19 +361,12 @@ const BusSearch = ({ from, setFrom, to, setTo, date, setDate, fromOptions, toOpt
     </div>
 );
 
-const SeatLayout = ({ bus, selectedSeats, toggleSeat, onProceed }) => {
-    if (!bus || !bus.seats) {
-        return <div>Loading seats...</div>;
-    }
+const SeatLayout = ({ bus, selectedSeats, bookedSeats, toggleSeat, onProceed }) => {
+    if (!bus || !bus.seats) return <div>Loading seats...</div>;
 
     const seats = bus.seats;
-    const occupiedSeats = bus.occupiedSeats || [];
-
-    // Split seats into rows of 4 (2 left, 2 right)
     const rows = [];
-    for (let i = 0; i < seats.length; i += 4) {
-        rows.push(seats.slice(i, i + 4));
-    }
+    for (let i = 0; i < seats.length; i += 4) rows.push(seats.slice(i, i + 4));
 
     return (
         <div className="bus-container">
@@ -314,17 +375,17 @@ const SeatLayout = ({ bus, selectedSeats, toggleSeat, onProceed }) => {
             {rows.map((row, idx) => (
                 <div key={idx} className="seat-row">
                     <div className="seat-pair">
-                        {row.slice(0,2).map(seatNo => {
-                            const isBooked = occupiedSeats.includes(seatNo);
+                        {row.slice(0, 2).map(seatNo => {
+                            const isBooked = bookedSeats.includes(seatNo);
                             const isSelected = selectedSeats.includes(seatNo);
                             return (
                                 <div
-                                    key={seatNo}
-                                    className={`seat ${isBooked ? 'booked' : ''} ${isSelected ? 'selected' : ''}`}
-                                    onClick={() => !isBooked && toggleSeat(seatNo)}
-                                >
-                                    {seatNo.toString().padStart(2, '0')}
-                                </div>
+    key={seatNo}
+    className={`seat ${isBooked ? 'booked' : 'available'} ${isSelected ? 'selected' : ''}`}
+    onClick={() => !isBooked && toggleSeat(seatNo)}
+>
+    {seatNo.toString().padStart(2, '0')}
+</div>
                             );
                         })}
                     </div>
@@ -332,30 +393,25 @@ const SeatLayout = ({ bus, selectedSeats, toggleSeat, onProceed }) => {
                     <div className="aisle"></div>
 
                     <div className="seat-pair">
-                        {row.slice(2,4).map(seatNo => {
-                            const isBooked = occupiedSeats.includes(seatNo);
-                            const isSelected = selectedSeats.includes(seatNo);
-                            return (
-                                <div
-                                    key={seatNo}
-                                    className={`seat ${isBooked ? 'booked' : ''} ${isSelected ? 'selected' : ''}`}
-                                    onClick={() => !isBooked && toggleSeat(seatNo)}
-                                >
-                                    {seatNo.toString().padStart(2, '0')}
-                                </div>
-                            );
-                        })}
-                    </div>
+    {row.slice(2, 4).map(seatNo => {
+        const isBooked = bookedSeats.includes(seatNo);
+        const isSelected = selectedSeats.includes(seatNo);
+        return (
+            <div
+                key={seatNo}
+                className={`seat ${isBooked ? 'booked' : 'available'} ${isSelected ? 'selected' : ''}`}
+                onClick={() => !isBooked && toggleSeat(seatNo)}
+            >
+                {seatNo.toString().padStart(2, '0')}
+            </div>
+        );
+    })}
+</div>
                 </div>
             ))}
 
-            {/* Proceed Button */}
             {selectedSeats.length > 0 && (
-                <button
-                    className="primary-btn"
-                    style={{ marginTop: '20px', display: 'block', width: '100%' }}
-                    onClick={onProceed}
-                >
+                <button className="primary-btn" style={{ marginTop: '20px', width: '100%' }} onClick={onProceed}>
                     Proceed to Boarding & Dropping
                 </button>
             )}
@@ -367,29 +423,35 @@ const BoardingDropping = ({ schedule, onConfirm }) => {
     const [boarding, setBoarding] = useState('');
     const [dropping, setDropping] = useState('');
 
+
     const handleConfirm = () => {
-        if (!boarding || !dropping) return alert('Please select boarding and dropping points.');
-        onConfirm();
+        if (!boarding || !dropping)
+            return alert("Select points");
+
+        onConfirm(boarding, dropping);
     };
 
     return (
         <div className="glass-card">
-            <h3>Select Boarding & Dropping Points</h3>
-            <div className="input-group">
-                <label>Boarding</label>
-                <select value={boarding} onChange={e => setBoarding(e.target.value)}>
-                    <option value="">Select</option>
-                    {schedule.stops?.map((stop, idx) => <option key={idx} value={stop}>{stop}</option>)}
-                </select>
-            </div>
-            <div className="input-group">
-                <label>Dropping</label>
-                <select value={dropping} onChange={e => setDropping(e.target.value)}>
-                    <option value="">Select</option>
-                    {schedule.stops?.map((stop, idx) => <option key={idx} value={stop}>{stop}</option>)}
-                </select>
-            </div>
-            <button className="primary-btn" onClick={handleConfirm}>Confirm Points</button>
+            <h3>Select Boarding & Dropping</h3>
+
+            <select onChange={e => setBoarding(e.target.value)}>
+                <option value="">Boarding</option>
+                {schedule.stops?.map((stop, i) =>
+                    <option key={i}>{stop}</option>
+                )}
+            </select>
+
+            <select onChange={e => setDropping(e.target.value)}>
+                <option value="">Dropping</option>
+                {schedule.stops?.map((stop, i) =>
+                    <option key={i}>{stop}</option>
+                )}
+            </select>
+
+            <button className="primary-btn" onClick={handleConfirm}>
+                Confirm Points
+            </button>
         </div>
     );
 };
@@ -403,28 +465,50 @@ const BookingSuccess = ({ onDone }) => (
     </div>
 );
 
-const MyBookingsView = () => (
+
+
+
+
+const MyBookingsView = () => {
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  
+
+  if (loading) return <p>Loading your bookings...</p>;
+  if (bookings.length === 0) return <p>No bookings found.</p>;
+
+  return (
     <div className="glass-card">
-        <table className="bookings-table">
-            <thead>
-                <tr>
-                    <th>Booking ID</th>
-                    <th>Route</th>
-                    <th>Date</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>BK-9945</td>
-                    <td>Colombo → Galle</td>
-                    <td>2026-05-10</td>
-                    <td><span className="status-pill confirmed">Confirmed</span></td>
-                </tr>
-            </tbody>
-        </table>
+      <table className="bookings-table">
+        <thead>
+          <tr>
+            <th>Booking ID</th>
+            <th>Seats</th>
+            <th>Boarding → Dropping</th>
+            <th>Amount</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {bookings.map((booking) => (
+            <tr key={booking.id}>
+              <td>{booking.id}</td>
+              <td>{booking.seats?.map((s) => s.toString().padStart(2, "0")).join(", ")}</td>
+              <td>{booking.boarding} → {booking.dropping}</td>
+              <td>LKR {booking.amount}</td>
+              <td>
+                <span className={`status-pill ${booking.status === "paid" ? "confirmed" : "pending"}`}>
+                  {booking.status === "paid" ? "Confirmed" : booking.status}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
-);
+  );
+};
 
 const ProfileSection = ({ profile, isEditing, setIsEditing, setProfile, handleSaveProfile, isSavingProfile }) => (
     <motion.div
@@ -502,5 +586,101 @@ const ProfileSection = ({ profile, isEditing, setIsEditing, setProfile, handleSa
         </div>
     </motion.div>
 );
+
+const PaymentSection = ({ schedule, selectedSeats, boarding, dropping, onSuccess }) => {
+
+   const handlePayment = async () => {
+
+    const user = auth.currentUser;
+    if (!user) return alert("User not logged in");
+
+    const orderId = "ORD-" + Date.now();
+    const amount = (schedule.price * selectedSeats.length).toFixed(2);
+
+    try {
+
+        // Request hash from Spring Boot backend
+        const res = await axios.post("http://localhost:8080/api/payment/hash", {
+    order_id: orderId,
+    amount: amount,
+    currency: "LKR"
+});
+const hash = res.data.hash;
+
+        const payment = {
+    sandbox: true,
+    merchant_id: "1234122", // From your account
+    return_url: "https://yourdomain.com/payment-success",
+    cancel_url: "https://yourdomain.com/payment-cancel",
+    notify_url: "https://yourdomain.com/api/payhere/notify",
+    order_id: orderId,
+    items: "Bus Seat Booking",
+    amount: amount,
+    currency: "LKR",
+    hash: hash, // from backend
+    first_name: user.displayName || "Passenger",
+    last_name: "",
+    email: user.email,
+    phone: user.phoneNumber || "0770000000",
+    address: "Colombo",
+    city: "Colombo",
+    country: "Sri Lanka",
+    custom_1: user.uid,
+    custom_2: JSON.stringify(selectedSeats)
+};
+
+        window.payhere.startPayment(payment);
+
+        window.payhere.onCompleted = async function (orderId) {
+
+            const bookingId = "BK-" + Date.now();
+
+            await setDoc(doc(databaseb, "bookings", bookingId), {
+                userId: user.uid,
+                orderId: orderId,
+                seats: selectedSeats,
+                boarding: boarding,
+                dropping: dropping,
+                scheduleId: schedule.routeNo,
+                amount: amount,
+                status: "paid",
+                createdAt: Date.now()
+            });
+
+            onSuccess();
+        };
+
+        window.payhere.onDismissed = function () {
+            alert("Payment cancelled");
+        };
+
+        window.payhere.onError = function (error) {
+            console.log(error);
+            alert("Payment error");
+        };
+
+    } catch (error) {
+        console.error("Payment error:", error);
+        alert("Payment initialization failed");
+    }
+};
+
+    return (
+        <div className="glass-card">
+            <h3>Payment</h3>
+
+            <p>Seats: {selectedSeats.join(", ")}</p>
+            <p>Boarding: {boarding}</p>
+            <p>Dropping: {dropping}</p>
+            <p>Total: LKR {schedule.price * selectedSeats.length}</p>
+
+            <button className="primary-btn" onClick={handlePayment}>
+                Pay with PayHere
+            </button>
+        </div>
+    );
+};
+
+
 
 export default PassengerDashboard;

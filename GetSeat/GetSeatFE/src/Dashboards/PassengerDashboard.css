@@ -68,15 +68,33 @@
 }
 
 .seat {
-    padding: 10px;
-    border-radius: 8px;
-    background: #334155;
-    border: 1px solid #475569;
-    color: white;
+    width: 40px;
+    height: 40px;
+    margin: 5px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
+    font-weight: bold;
+    transition: all 0.2s;
 }
 
-.seat.booked { background: #ef4444; color: white; cursor: not-allowed; opacity: 0.5; }
+.seat.available {
+    background-color: #4caf50; /* green */
+    color: white;
+}
+
+.seat.booked {
+    background-color: #f44336; /* red */
+    color: white;
+    cursor: not-allowed;
+}
+
+.seat.selected {
+    background-color: #ff9800; /* orange/yellow */
+    color: white;
+}
 .seat.selected { background: #10b981; border-color: #059669; }
 
 /* Status Pills */
